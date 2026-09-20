@@ -1,6 +1,6 @@
 {
   "name": "wacko-portfolio",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "private": true,
   "type": "module",
   "engines": {
@@ -8,6 +8,7 @@
   },
   "scripts": {
     "start": "node server.mjs",
-    "check": "node --check server.mjs && node --check dist/background.js && node --check dist/assets/particles.min.js && node --test test/*.test.mjs"
+    "check": "node --check server.mjs && node --check src/background.js && node --check src/assets/particles.min.js && node --test test/*.test.mjs",
+    "build": "node build.mjs"
   }
 }

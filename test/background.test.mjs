@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import { readFileSync } from 'node:fs';
 
-const code = readFileSync(new URL('../dist/background.js', import.meta.url), 'utf8');
+const code = readFileSync(new URL('../src/background.js', import.meta.url), 'utf8');
 function setup(reduced = false) {
   const events = {};
   let draws = 0;

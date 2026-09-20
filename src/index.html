@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#000000">
+  <meta name="description" content="Wacko. iOS and full-stack developer, pentester, and creator of Cloak.">
+  <meta name="referrer" content="no-referrer">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'; img-src 'self'; font-src 'self'; script-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>Wacko</title>
+  <link rel="icon" href="/assets/terminal.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/style.css">
+  <link rel="preload" href="/assets/dm-sans.woff2" as="font" type="font/woff2" crossorigin>
+  <script src="/assets/particles.min.js" integrity="sha384-D7d0e1m4gT8NxcTX0rgyvxEzXRqA2PQr52jcTkxums9epqFzNTJYgJka6DF+yJFg" defer></script>
+  <script src="/background.js" integrity="sha384-gadF+UXgzyLx2uTRJfUMBhO4bSJOUhyTElj/m+omoOtcpImIe1QW/R43aX74LXxY" defer></script>
+</head>
+<body>
+  <div id="particles" class="backdrop" aria-hidden="true"></div>
+  <div class="page">
+    <main>
+      <h1>I'm Wacko.</h1>
+      <p>I develop iOS applications and full-stack systems. I created Cloak, an iOS spoofing application, and I also work in law.</p>
+      <p>I have 4 years of cybersecurity experience and have identified hundreds, if not thousands, of bugs through penetration testing. I've earned top placements in multiple national CTF competitions, including U.S. government-hosted events.</p>
+      <p>I specialize in networks, infrastructure, and physical security.</p>
+      <p>I operate on-premises, self-managed IT infrastructure and a high-fidelity ICS Level 3 emulation range built on Type-1 and Type-2 hypervisors.</p>
+      <div class="credentials" aria-label="Certifications and infrastructure">
+        <div class="credential comptia">
+          <img src="/assets/comptia.svg" alt="CompTIA" width="70" height="40">
+          <div><span>A+ / Network+ / Security+</span><span class="secondary">IT Operations Specialist</span></div>
+        </div>
+        <div class="credential"><img src="/assets/cisco.svg" alt="Cisco" width="46" height="40"><span>CCNA</span></div>
+        <div class="credential"><img src="/assets/proxmox.svg" alt="Proxmox" width="25" height="25"><span>Proxmox</span></div>
+      </div>
+    </main>
+    <footer>
+      <nav aria-label="Contact">
+        <a href="https://discord.com/users/848356730256883744" target="_blank" rel="noopener noreferrer"><img src="/assets/discord.svg" alt="" width="21" height="21">Discord</a>
+        <a class="email" href="mailto:contactweb@wackoxyz.org">Email me</a>
+      </nav>
+      <div class="footer-tools"><button id="motion-toggle" type="button" hidden aria-pressed="false">Pause background</button><details class="credits"><summary>Credits</summary><div class="credit-panel"><pre>__ASSET_CREDITS__</pre></div></details></div>
+    </footer>
+  </div>
+</body>
+</html>

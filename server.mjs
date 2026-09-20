@@ -4,23 +4,12 @@ import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
 
 const root = fileURLToPath(new URL('./dist/', import.meta.url));
-const manifest = {
-  '/': ['index.html', 'text/html; charset=utf-8'],
-  '/index.html': ['index.html', 'text/html; charset=utf-8'],
-  '/style.css': ['style.css', 'text/css; charset=utf-8'],
-  '/credits.txt': ['credits.txt', 'text/plain; charset=utf-8'],
-  '/assets/comptia.svg': ['assets/comptia.svg', 'image/svg+xml'],
-  '/assets/cisco.svg': ['assets/cisco.svg', 'image/svg+xml'],
-  '/assets/discord.svg': ['assets/discord.svg', 'image/svg+xml'],
-  '/assets/proxmox.svg': ['assets/proxmox.svg', 'image/svg+xml'],
-  '/assets/terminal.svg': ['assets/terminal.svg', 'image/svg+xml'],
-  '/assets/particles.min.js': ['assets/particles.min.js', 'text/javascript; charset=utf-8'],
-  '/background.js': ['background.js', 'text/javascript; charset=utf-8'],
-  '/assets/dm-sans.woff2': ['assets/dm-sans.woff2', 'font/woff2']
-};
-const assets = new Map(Object.entries(manifest).map(([route, [file, type]]) => [route, { body: readFileSync(resolve(root, file)), type }]));
+const body = readFileSync(resolve(root, 'index.html'));
+const policy = body.toString('utf8').match(/<meta http-equiv="Content-Security-Policy" content="([^"]+)"/);
+if (!policy) throw new Error('Missing compiled Content Security Policy. Run npm run build.');
 const securityHeaders = {
-  'Content-Security-Policy': "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+  'Content-Security-Policy': policy[1] + "; frame-ancestors 'none'",
+  'Strict-Transport-Security': 'max-age=31536000',
   'X-Content-Type-Options': 'nosniff',
   'X-Frame-Options': 'DENY',
   'Referrer-Policy': 'no-referrer',
@@ -44,11 +33,11 @@ export function createServer() {
     const pathname = raw.split('?')[0];
     if (/%|\\|\x00|\/\./.test(pathname)) return fail(400, 'Bad request\n');
     if (req.headers['transfer-encoding'] || (req.headers['content-length'] && req.headers['content-length'] !== '0')) return fail(400, 'Bad request\n', { Connection: 'close' });
-    const asset = assets.get(pathname);
-    if (!asset) return fail(404, 'Not found\n');
-    res.writeHead(200, { 'Content-Type': asset.type, 'Content-Length': asset.body.length });
-    res.end(req.method === 'HEAD' ? undefined : asset.body);
+    if (pathname !== '/') return fail(404, 'Not found\n');
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Content-Length': body.length });
+    res.end(req.method === 'HEAD' ? undefined : body);
   });
+  server.setTimeout(15000, socket => socket.destroy());
   server.maxRequestsPerSocket = 100;
   server.maxConnections = 256;
   server.on('clientError', (_error, socket) => {
@@ -58,7 +47,8 @@ export function createServer() {
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const host = process.env.HOST || '127.0.0.1';
+  if (process.env.HOST && process.env.HOST !== '127.0.0.1') throw new Error('This server only binds to 127.0.0.1. Run cloudflared in the same guest.');
+  const host = '127.0.0.1';
   const port = Number(process.env.PORT || 3000);
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('PORT must be between 1 and 65535');
   const server = createServer();

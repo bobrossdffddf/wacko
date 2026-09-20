@@ -1,27 +1,10 @@
 # Wacko
 
-A single-page portfolio. Plain HTML and CSS, locally hosted assets, and a Node server with no application dependencies or build step.
+One self-contained portfolio page, served by a small Node server. Cloudflare Tunnel connects to the localhost listener. No application npm dependencies or additional web pages.
 
-## Run
+## Start with npm and PM2
 
-Use an up-to-date Node.js 24 LTS release or newer supported LTS. Inside the extracted `wacko-portfolio` folder:
-
-```bash
-npm install --ignore-scripts
-npm start
-```
-
-Open http://127.0.0.1:3000 on the same machine. The default listener is localhost. For a temporary LAN preview in your VM or container:
-
-```bash
-HOST=0.0.0.0 npm start
-```
-
-Open `http://YOUR_CONTAINER_IP:3000` from the LAN. Stop this preview before starting PM2. Keep the production app on localhost behind your HTTPS proxy.
-
-## Proxmox + PM2
-
-Use a Debian/Ubuntu guest VM or unprivileged LXC on Proxmox. Run this as a normal user in the guest, rather than on the Proxmox management host. Install a supported Node LTS and npm first.
+Use an up-to-date Node.js 24 LTS or newer supported LTS in a dedicated Proxmox VM or unprivileged LXC. Run the app as a normal user. Run cloudflared in that same guest and network namespace, not in a separate guest or isolated Docker network.
 
 ```bash
 cd wacko-portfolio
@@ -32,64 +15,64 @@ pm2 save
 pm2 startup
 ```
 
-Run the specific system startup command printed by `pm2 startup`, then run `pm2 save` again. PM2 binds the application to `127.0.0.1:3000` by default. Use a user-owned Node installation for the global PM2 install.
+Run the system startup command printed by `pm2 startup`, then run `pm2 save` again. Use a user-owned Node installation for the global PM2 installation. A compiled page is included; no build is required to start it.
+
+The server only binds to `127.0.0.1:3000`. A non-loopback HOST setting is refused. For a temporary local process, use `npm start` instead of PM2, not both at once.
+
+## Cloudflare Tunnel
+
+For a dashboard-managed tunnel, install cloudflared using Cloudflare's instructions and connect the tunnel using the service installation command shown in your dashboard. Keep the tunnel token outside this project.
+
+Set the published application to:
+
+| Setting | Value |
+| --- | --- |
+| Hostname | Your chosen portfolio hostname |
+| Service type | HTTP |
+| Service URL | `127.0.0.1:3000` |
+| Path | Leave blank; Node only serves `/` |
+
+This hostname mapping is required by Cloudflare to deliver the site. It does not create API routes or extra pages in the application.
+
+Enable Always Use HTTPS for the public hostname. Cloudflare handles visitor-facing TLS; the last hop is HTTP over loopback inside the same guest. HSTS is returned by Node and applies when the visitor reaches the page over HTTPS.
+
+Do not forward router ports for this site. Keep inbound access to ports 80, 443, and 3000 closed on the guest and router, while retaining your existing trusted management access. Allow cloudflared's documented outbound connectivity. Do not publish the Proxmox management interface through this tunnel.
+
+For a locally managed tunnel, `cloudflared.example.yml` is an alternative configuration. Replace all three placeholders with your tunnel UUID, credential path, and public hostname. Its ingress matches only `/`, with a final 404 rule for everything else. Store real tunnel credentials outside this project with access restricted to the cloudflared service account. Validate the installed configuration with `cloudflared tunnel ingress validate`.
+
+Keep Cloudflare features that inject or rewrite page scripts disabled for this hostname, including Rocket Loader and injected analytics. The page's hash-based Content Security Policy intentionally permits only its two bundled scripts and bundled stylesheet. Account-side WAF or rate-limiting rules may be added in Cloudflare; this package does not configure or claim to enable them.
+
+## Public surface
+
+- Only `GET /` and `HEAD /` return the page. Query strings are ignored and never reflected.
+- Every other valid path returns 404, including `/index.html`, `/assets/`, `/credits.txt`, `/api`, `/admin`, `/health`, `/metrics`, and all source/configuration files. Malformed paths return 400.
+- Icons, fonts, CSS, and the reactive animation are embedded in the HTML. There are no separate asset endpoints.
+- Asset credits expand within the existing page; they do not open a new route.
+- No accounts, forms, uploads, database, cookies, analytics, filesystem browsing, dynamic templates, proxy endpoints, or background browser network requests.
+- Only hash-pinned scripts and CSS execute. No unsafe-inline, unsafe-eval, third-party resources, or outgoing browser connections are allowed.
+- Requests cannot select a file from disk. The server loads a single known HTML file at startup and returns those same bytes for the root page.
+- Non-read methods and request bodies are rejected. Header sizes, connection count, request durations, idle time, and requests per connection are bounded.
+- Framing, MIME sniffing, referrers, and unnecessary browser permissions are restricted.
+
+A public website cannot have zero attack surface. This setup minimizes the origin's exposure, but Node, cloudflared, PM2, the OS, account security, and the public Cloudflare endpoint remain relevant. Keep them updated. A tunnel does not replace patching, and public traffic can still reach the allowed page. No live tunnel or Cloudflare account settings are configured by this package.
+
+## Edit and test
+
+Edit `src/index.html`, `src/style.css`, or `src/background.js`. The downloaded human-designed icons, font, and animation library are in `src/assets`. Preserve the included asset licenses.
 
 ```bash
-pm2 status
-pm2 logs wacko --lines 30
+npm run build
+npm run check
 pm2 restart wacko
 ```
 
-Restart after editing files because the server loads its public files into memory at startup.
+The build embeds assets and updates the script/style CSP hashes. Do not edit the compiled HTML directly. The Node server must restart after a rebuild because it keeps the page in memory.
 
-## HTTPS with Caddy
-
-The included `Caddyfile` is for Caddy running in the same guest as the app. Install Caddy using its official instructions. Replace `{$SITE_DOMAIN}` with your actual domain, then install the file as `/etc/caddy/Caddyfile`. Alternatively, supply `SITE_DOMAIN` in Caddy's service environment.
-
-Point your domain's DNS to your public IP and forward TCP ports 80 and 443 to this guest. Allow those ports through the guest firewall. Keep port 3000 and the Proxmox management interface private.
-
-```bash
-sudo caddy validate --config /etc/caddy/Caddyfile
-sudo systemctl reload caddy
-```
-
-Caddy obtains and renews HTTPS certificates when DNS and incoming traffic are configured correctly. The provided configuration adds HSTS and proxies to the localhost Node listener. If your proxy is in another guest, bind Node to the web guest's private IP and allow port 3000 only from that proxy; update the proxy upstream accordingly.
-
-## Security
-
-- No forms, accounts, uploads, analytics, cookies, database, or application npm dependencies. The only browser JavaScript is the locally bundled particles.js background and its configuration.
-- Exact public-file allowlist. Server source, configuration, environment files, and arbitrary paths cannot be downloaded through the server.
-- Only GET and HEAD are accepted. Encoded paths, traversal attempts, overlong URLs, and request bodies are rejected.
-- Restrictive Content Security Policy, frame protection, MIME sniffing protection, no referrer, restricted browser permissions, and cross-origin opener/resource protections.
-- Bounded connection count, header size, request timeouts, and requests per socket.
-- External links use `noopener noreferrer`. Icons, font, and background scripts are served locally. Inline scripts, eval, and outbound script connections are blocked.
-- HSTS is set at the HTTPS proxy, not on plain HTTP responses.
-
-These controls reduce the site's attack surface; they do not protect an unpatched guest, leaked SSH credentials, compromised dependencies in the hosting stack, or a volumetric DDoS attack. Keep Node, PM2, Caddy, and the guest OS updated. Infrastructure security still depends on your configuration.
-
-Run the included HTTP security tests:
-
-```bash
-npm run check
-```
-
-## Edit
-
-- `dist/index.html`: text and links.
-- `dist/style.css`: layout and styling.
-- `dist/assets/`: downloaded icons, font, and particles.js.
-- `server.mjs`: public route allowlist and HTTP controls.
-- `ecosystem.config.cjs`: process settings.
-
-Discord opens the supplied user profile. Email me opens the visitor's email application addressed to contactweb@wackoxyz.org. No account lookup or verification is claimed.
-
-The background responds to pointer movement and touch, pauses when the tab is hidden, and respects reduced-motion preferences. The footer control can pause or resume it.
-
-Asset attribution is in `dist/credits.txt`, also linked from the page. Preserve the asset licenses included in this package.
+The email link opens the visitor's mail application addressed to `contactweb@wackoxyz.org`; it does not send email through this server. Discord opens the supplied user profile. The animated background supports pointer/touch interaction, reduced-motion preferences, and a pause control.
 
 ## References
 
+- Cloudflare dashboard tunnel setup: https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/get-started/create-remote-tunnel/
+- Cloudflare configuration: https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/do-more-with-tunnels/local-management/configuration-file/
+- Cloudflare firewall requirements: https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/configure-tunnels/tunnel-with-firewall/
 - PM2: https://pm2.keymetrics.io/docs/usage/quick-start/
-- Caddy: https://caddyserver.com/docs/quick-starts/reverse-proxy
-- Header guidance: https://cheatsheetseries.owasp.org/cheatsheets/HTTP_Headers_Cheat_Sheet.html
-# wacko
