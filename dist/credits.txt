@@ -1,0 +1,20 @@
+Visual assets
+
+CompTIA, Cisco, Discord and Proxmox brand icons: Simple Icons contributors.
+https://github.com/simple-icons/simple-icons
+Licensed CC0-1.0. Brand names and trademarks belong to their respective owners.
+Icons are bundled unmodified; displayed in white using CSS.
+
+Terminal favicon: Lucide contributors. ISC license.
+https://github.com/lucide-icons/lucide/blob/main/icons/terminal.svg
+
+Animated background: particles.js 2.0.0, Vincent Garreau. MIT license.
+https://github.com/VincentGarreau/particles.js
+https://cdn.jsdelivr.net/npm/particles.js@2.0.0/particles.min.js
+Bundled locally. CDN wrapper and source-map reference removed; library behavior unchanged.
+
+DM Sans: Colophon Foundry. SIL Open Font License 1.1.
+https://github.com/google/fonts/tree/main/ofl/dmsans
+https://fontsource.org/fonts/dm-sans
+
+Brand icons identify technologies and credentials; they do not imply sponsorship.
