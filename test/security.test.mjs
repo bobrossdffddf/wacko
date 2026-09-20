@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import http from 'node:http';
 import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
-import { spawnSync } from 'node:child_process';
-import { createServer } from '../server.mjs';
+import { spawnSync, spawn } from 'node:child_process';
+import { createServer, getListenConfig } from '../server.mjs';
 
 let server;
 let port;
@@ -98,10 +98,59 @@ test('embedded scripts and styles have matching restrictive CSP hashes', async (
   }
 });
 test('public interface binding is refused', () => {
-  const result = spawnSync(process.execPath, ['server.mjs'], {
+  const result = spawnSync(process.execPath, ['start.mjs'], {
     cwd: new URL('../', import.meta.url),
     env: { ...process.env, HOST: '0.0.0.0' }, encoding: 'utf8', timeout: 3000
   });
   assert.equal(result.status, 1);
-  assert.match(result.stderr, /only binds to 127\.0\.0\.1/);
+  assert.match(result.stderr, /wildcard and public binding are refused/);
+});
+
+test('LAN subnet works without a tunnel IP and denies other networks', () => {
+  const config = getListenConfig({});
+  assert.equal(config.host, '192.168.68.58');
+  assert.equal(config.port, 3000);
+  for (const ip of ['192.168.68.1', '192.168.68.58', '192.168.68.99', '192.168.68.254', '127.0.0.1', '::1']) assert.ok(config.allowedPeers.has(ip), ip);
+  for (const ip of ['192.168.67.99', '192.168.69.1', '10.0.0.1', '8.8.8.8']) assert.equal(config.allowedPeers.has(ip), false, ip);
+  assert.throws(() => getListenConfig({ ALLOWED_SUBNET: '0.0.0.0/0' }));
+  assert.throws(() => getListenConfig({ ALLOWED_SUBNET: '192.168.69.0/24' }));
+});
+test('unapproved source cannot bypass the allowlist with proxy headers', async () => {
+  const locked = createServer({ allowedPeers: new Set(['192.168.68.99']) });
+  await new Promise(resolve => locked.listen(0, '127.0.0.1', resolve));
+  try {
+    const response = await fetch(`http://127.0.0.1:${locked.address().port}/`, {
+      headers: { 'X-Forwarded-For': '192.168.68.99', 'CF-Connecting-IP': '192.168.68.99' }
+    });
+    assert.equal(response.status, 403);
+    assert.equal(await response.text(), 'Forbidden\n');
+  } finally {
+    locked.closeAllConnections();
+    await new Promise(resolve => locked.close(resolve));
+  }
+});
+
+test('PM2-style dynamic import starts the HTTP listener', async () => {
+  const reservation = http.createServer();
+  await new Promise(resolve => reservation.listen(0, '127.0.0.1', resolve));
+  const availablePort = reservation.address().port;
+  await new Promise(resolve => reservation.close(resolve));
+  const child = spawn(process.execPath, ['--input-type=module', '-e', 'import("./start.mjs")'], {
+    cwd: new URL('../', import.meta.url),
+    env: { ...process.env, HOST: '127.0.0.1', PORT: String(availablePort) }, stdio: ['ignore', 'pipe', 'pipe']
+  });
+  try {
+    await new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('No startup listener')), 4000);
+      child.stdout.once('data', () => { clearTimeout(timer); resolve(); });
+      child.once('error', error => { clearTimeout(timer); reject(error); });
+      child.once('exit', code => { clearTimeout(timer); reject(new Error(`Startup exited: ${code}`)); });
+    });
+    const response = await fetch(`http://127.0.0.1:${availablePort}/`);
+    assert.equal(response.status, 200);
+    assert.match(await response.text(), /I'm Wacko/);
+  } finally {
+    child.kill('SIGTERM');
+    await new Promise(resolve => child.once('exit', resolve));
+  }
 });

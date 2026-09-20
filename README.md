@@ -1,13 +1,32 @@
 # Wacko
 
-One self-contained portfolio page, served by a small Node server. Cloudflare Tunnel connects to the localhost listener. No application npm dependencies or additional web pages.
+One self-contained page. The website listens on `192.168.68.58:3000` and permits direct connections from `192.168.68.0/24` plus local loopback. No tunnel IP is required. Cloudflared can run on another VM in the same subnet.
 
-## Start with npm and PM2
+## Replace the existing installation
 
-Use an up-to-date Node.js 24 LTS or newer supported LTS in a dedicated Proxmox VM or unprivileged LXC. Run the app as a normal user. Run cloudflared in that same guest and network namespace, not in a separate guest or isolated Docker network.
+Copy the contents of the downloaded `wacko-portfolio` folder into `/root/wacko`, replacing the previous files. Do not put the new folder inside the old one. Remove the obsolete Caddyfile if it remains from an earlier installation.
+
+On the website VM:
 
 ```bash
-cd wacko-portfolio
+cd /root/wacko
+pm2 delete wacko
+pm2 start ecosystem.config.cjs
+pm2 save
+ss -ltnp | grep ':3000'
+```
+
+The delete command removes only the old PM2 process registration, not the site files. This prevents stale process settings from preserving the old launcher. If no process named wacko exists, skip that command.
+
+Now open `http://192.168.68.58:3000` from a device on the same `192.168.68.x` network. That network is assumed to use a `/24` mask. If yours differs, change ALLOWED_SUBNET in the ecosystem file. Changing HOST also requires choosing an address actually assigned to the web VM.
+
+The dedicated `start.mjs` entry point starts the listener when imported by PM2. The server module can still be imported safely by tests.
+
+## New installation
+
+Install an up-to-date Node.js 24 LTS or newer supported LTS, npm, and PM2 in the web VM. The application has no npm dependencies and includes its compiled page.
+
+```bash
 npm install --ignore-scripts
 npm install --global pm2
 pm2 start ecosystem.config.cjs
@@ -15,50 +34,49 @@ pm2 save
 pm2 startup
 ```
 
-Run the system startup command printed by `pm2 startup`, then run `pm2 save` again. Use a user-owned Node installation for the global PM2 installation. A compiled page is included; no build is required to start it.
-
-The server only binds to `127.0.0.1:3000`. A non-loopback HOST setting is refused. For a temporary local process, use `npm start` instead of PM2, not both at once.
+Run the system startup command printed by PM2 and save again. A non-root service account is preferable for a fresh install. `npm start` also starts the app directly; do not run it while PM2 already owns port 3000.
 
 ## Cloudflare Tunnel
 
-For a dashboard-managed tunnel, install cloudflared using Cloudflare's instructions and connect the tunnel using the service installation command shown in your dashboard. Keep the tunnel token outside this project.
+On the separate tunnel VM, set the published application's HTTP service to `192.168.68.58:3000`. The full origin URL is `http://192.168.68.58:3000`. Use your chosen public hostname and leave the path field blank. The application itself only serves `/`.
 
-Set the published application to:
+Enable HTTPS for visitors at Cloudflare. The VM-to-VM hop is ordinary HTTP over your private LAN. Keep it on a trusted network and do not forward TCP 3000 on your router. Tunnel credentials must remain on the tunnel VM, outside the website project.
 
-| Setting | Value |
-| --- | --- |
-| Hostname | Your chosen portfolio hostname |
-| Service type | HTTP |
-| Service URL | `127.0.0.1:3000` |
-| Path | Leave blank; Node only serves `/` |
+If you use a locally managed tunnel, `cloudflared.example.yml` maps the root path to the web VM and rejects unmatched paths. Replace the tunnel UUID, credential path, and hostname placeholders; validate the installed configuration with `cloudflared tunnel ingress validate`.
 
-This hostname mapping is required by Cloudflare to deliver the site. It does not create API routes or extra pages in the application.
+The application allows the tunnel VM as a LAN peer. People visiting your public Cloudflare hostname can still see the site; this LAN restriction is an origin restriction, not visitor authentication.
 
-Enable Always Use HTTPS for the public hostname. Cloudflare handles visitor-facing TLS; the last hop is HTTP over loopback inside the same guest. HSTS is returned by Node and applies when the visitor reaches the page over HTTPS.
+If a VM or Proxmox firewall is enabled, it must permit TCP 3000 from `192.168.68.0/24`. Keep other sources blocked. Do not reset or flush existing firewall rules.
 
-Do not forward router ports for this site. Keep inbound access to ports 80, 443, and 3000 closed on the guest and router, while retaining your existing trusted management access. Allow cloudflared's documented outbound connectivity. Do not publish the Proxmox management interface through this tunnel.
+Disable script rewriting/injection such as Rocket Loader or injected analytics for the hostname. The Content Security Policy only allows the page's exact bundled scripts and styles.
 
-For a locally managed tunnel, `cloudflared.example.yml` is an alternative configuration. Replace all three placeholders with your tunnel UUID, credential path, and public hostname. Its ingress matches only `/`, with a final 404 rule for everything else. Store real tunnel credentials outside this project with access restricted to the cloudflared service account. Validate the installed configuration with `cloudflared tunnel ingress validate`.
+## Fail2Ban
 
-Keep Cloudflare features that inject or rewrite page scripts disabled for this hostname, including Rocket Loader and injected analytics. The page's hash-based Content Security Policy intentionally permits only its two bundled scripts and bundled stylesheet. Account-side WAF or rate-limiting rules may be added in Cloudflare; this package does not configure or claim to enable them.
+A Debian/Ubuntu setup script and SSH jail are included. Run on the website VM:
 
-## Public surface
+```bash
+bash setup-fail2ban.sh
+fail2ban-client status sshd
+```
 
-- Only `GET /` and `HEAD /` return the page. Query strings are ignored and never reflected.
-- Every other valid path returns 404, including `/index.html`, `/assets/`, `/credits.txt`, `/api`, `/admin`, `/health`, `/metrics`, and all source/configuration files. Malformed paths return 400.
-- Icons, fonts, CSS, and the reactive animation are embedded in the HTML. There are no separate asset endpoints.
-- Asset credits expand within the existing page; they do not open a new route.
-- No accounts, forms, uploads, database, cookies, analytics, filesystem browsing, dynamic templates, proxy endpoints, or background browser network requests.
-- Only hash-pinned scripts and CSS execute. No unsafe-inline, unsafe-eval, third-party resources, or outgoing browser connections are allowed.
-- Requests cannot select a file from disk. The server loads a single known HTML file at startup and returns those same bytes for the root page.
-- Non-read methods and request bodies are rejected. Header sizes, connection count, request durations, idle time, and requests per connection are bounded.
-- Framing, MIME sniffing, referrers, and unnecessary browser permissions are restricted.
+Run with sudo if you are not root. The script installs Fail2Ban and its systemd journal support, validates the configuration, and enables the service. The SSH jail bans a source for 10 minutes after 5 failed authentication attempts within 10 minutes. It uses SSH port 22 (`port = ssh`); change that setting before installation if your SSH daemon uses a different port. Localhost is exempt. An unban command is `fail2ban-client set sshd unbanip CLIENT_IP`.
 
-A public website cannot have zero attack surface. This setup minimizes the origin's exposure, but Node, cloudflared, PM2, the OS, account security, and the public Cloudflare endpoint remain relevant. Keep them updated. A tunnel does not replace patching, and public traffic can still reach the allowed page. No live tunnel or Cloudflare account settings are configured by this package.
+This protects SSH authentication on the VM. It does not ban website visitors or scan HTTP paths. A firewall-level website ban could otherwise block the shared cloudflared connector rather than an individual remote visitor. Use Cloudflare's edge controls for public web traffic if needed. Neither Fail2Ban installation nor firewall changes have been executed on your VM by this package.
 
-## Edit and test
+## Public application surface
 
-Edit `src/index.html`, `src/style.css`, or `src/background.js`. The downloaded human-designed icons, font, and animation library are in `src/assets`. Preserve the included asset licenses.
+- Only GET and HEAD on `/` return the page. Query strings are ignored and never reflected.
+- All other valid paths return 404; malformed paths return 400. Other HTTP methods are rejected.
+- Icons, fonts, CSS, animation, and asset credits are embedded. There are no asset endpoints, APIs, admin routes, health checks, uploads, forms, accounts, database, or analytics.
+- Direct clients outside the configured LAN are rejected based on the actual socket address. Forwarding headers cannot bypass this check.
+- Scripts and styles are CSP hash-pinned. No unsafe-inline, unsafe-eval, remote resources, or background browser connections are allowed.
+- Request size, time, and connection limits remain in place, with framing, MIME-sniffing, and browser-permission restrictions.
+
+Zero attack surface cannot be guaranteed. Keep Node, PM2, cloudflared, Fail2Ban, and the OS patched.
+
+## Edit and verify
+
+Edit the files under `src/`, then:
 
 ```bash
 npm run build
@@ -66,13 +84,10 @@ npm run check
 pm2 restart wacko
 ```
 
-The build embeds assets and updates the script/style CSP hashes. Do not edit the compiled HTML directly. The Node server must restart after a rebuild because it keeps the page in memory.
-
-The email link opens the visitor's mail application addressed to `contactweb@wackoxyz.org`; it does not send email through this server. Discord opens the supplied user profile. The animated background supports pointer/touch interaction, reduced-motion preferences, and a pause control.
+The build embeds assets and regenerates CSP hashes. Restart after a build because the server loads the page into memory at startup. Preserve the asset licenses. Credits expand within the page, without an additional route.
 
 ## References
 
-- Cloudflare dashboard tunnel setup: https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/get-started/create-remote-tunnel/
-- Cloudflare configuration: https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/do-more-with-tunnels/local-management/configuration-file/
-- Cloudflare firewall requirements: https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/configure-tunnels/tunnel-with-firewall/
+- Cloudflare Tunnel: https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/get-started/create-remote-tunnel/
 - PM2: https://pm2.keymetrics.io/docs/usage/quick-start/
+- Fail2Ban jail settings: https://github.com/fail2ban/fail2ban/blob/master/config/jail.conf
